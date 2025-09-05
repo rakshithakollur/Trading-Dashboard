@@ -1,0 +1,774 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>The MoneyWagon Reloaded</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Import Supabase Client -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        body { font-family: sans-serif; }
+        .modal-backdrop {
+            display: none; position: fixed; inset: 0;
+            background-color: rgba(0, 0, 0, 0.7);
+            justify-content: center; align-items: center; z-index: 50;
+        }
+        .modal-backdrop.active { display: flex; }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+    </style>
+</head>
+<body class="bg-[#000000] text-gray-100">
+
+    <div class="container mx-auto p-4">
+        <header class="flex justify-between items-center mb-6">
+            <h1 class="text-3xl font-bold text-[#3ECF8E]">The MoneyWagon Reloaded</h1>
+            <p class="text-xs text-gray-400">Backend: Supabase</p>
+        </header>
+
+        <!-- Navigation Tabs -->
+        <nav class="grid grid-cols-2 sm:grid-cols-5 gap-2 mb-6 bg-[#1C1C1E] p-2 rounded-lg">
+            <button data-tab="dashboard" class="tab-button flex items-center justify-center space-x-2 px-3 py-2 rounded-md text-sm font-medium transition-all duration-200 bg-[#3ECF8E] text-black shadow-lg">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9"></rect><rect x="14" y="3" width="7" height="5"></rect><rect x="14" y="12" width="7" height="9"></rect><rect x="3" y="16" width="7" height="5"></rect></svg>
+                <span class="hidden sm:inline">Dashboard</span>
+            </button>
+            <button data-tab="portfolio" class="tab-button flex items-center justify-center space-x-2 px-3 py-2 rounded-md text-sm font-medium transition-all duration-200 bg-[#2C2C2E] text-gray-300 hover:bg-[#3A3A3C]">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+                <span class="hidden sm:inline">Portfolio Summary</span>
+            </button>
+            <button data-tab="transaction" class="tab-button flex items-center justify-center space-x-2 px-3 py-2 rounded-md text-sm font-medium transition-all duration-200 bg-[#2C2C2E] text-gray-300 hover:bg-[#3A3A3C]">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                <span class="hidden sm:inline">New Transaction</span>
+            </button>
+            <button data-tab="history" class="tab-button flex items-center justify-center space-x-2 px-3 py-2 rounded-md text-sm font-medium transition-all duration-200 bg-[#2C2C2E] text-gray-300 hover:bg-[#3A3A3C]">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 4v6h6"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
+                <span class="hidden sm:inline">History</span>
+            </button>
+            <button data-tab="prices" class="tab-button flex items-center justify-center space-x-2 px-3 py-2 rounded-md text-sm font-medium transition-all duration-200 bg-[#2C2C2E] text-gray-300 hover:bg-[#3A3A3C]">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"></line><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg>
+                <span class="hidden sm:inline">Manage Prices</span>
+            </button>
+        </nav>
+
+        <main id="main-content" class="bg-[#1C1C1E] p-6 rounded-lg shadow-2xl">
+            <!-- Loading and Error States -->
+            <div id="loading-state" class="text-center p-10">Connecting to Supabase and loading data...</div>
+            <div id="error-state" class="hidden text-center p-10 text-red-500"></div>
+
+            <!-- Tab Content -->
+            <div id="dashboard-tab" class="tab-content active"></div>
+            <div id="portfolio-tab" class="tab-content"></div>
+            <div id="transaction-tab" class="tab-content"></div>
+            <div id="history-tab" class="tab-content"></div>
+            <div id="prices-tab" class="tab-content"></div>
+        </main>
+    </div>
+
+    <!-- Modals -->
+    <div id="holdings-modal" class="modal-backdrop"></div>
+    <div id="prompt-modal" class="modal-backdrop"></div>
+
+    <script type="module">
+        // --- DOM Elements ---
+        const loadingDiv = document.getElementById('loading-state');
+        const errorDiv = document.getElementById('error-state');
+        const mainContent = document.getElementById('main-content');
+        const tabButtons = document.querySelectorAll('.tab-button');
+        const tabContents = document.querySelectorAll('.tab-content');
+
+        // --- App State ---
+        let supabaseClient;
+        let transactions = [], commodities = [], individuals = [], brokers = [];
+        let portfolioData = [];
+
+        // --- Helper Functions ---
+        const formatCurrency = (value) => (value || 0).toLocaleString('en-IN', { style: 'currency', currency: 'INR' });
+
+        // --- Tab Switching Logic ---
+        tabButtons.forEach(button => {
+            button.addEventListener('click', () => {
+                const targetTab = button.dataset.tab;
+                tabButtons.forEach(btn => {
+                    btn.classList.remove('bg-[#3ECF8E]', 'text-black');
+                    btn.classList.add('bg-[#2C2C2E]', 'text-gray-300');
+                });
+                button.classList.add('bg-[#3ECF8E]', 'text-black');
+                button.classList.remove('bg-[#2C2C2E]', 'text-gray-300');
+                tabContents.forEach(content => content.classList.remove('active'));
+                document.getElementById(`${targetTab}-tab`).classList.add('active');
+                renderFullActiveTab(); // Render full tab content on switch
+            });
+        });
+        
+        // --- Full Render Function (for tab switching) ---
+        function renderFullActiveTab() {
+            const activeTab = document.querySelector('.tab-content.active')?.id.replace('-tab', '');
+            if (!activeTab) return;
+            
+            switch(activeTab) {
+                case 'dashboard': renderDashboard(); break;
+                case 'portfolio': renderPortfolioSummary(); break;
+                case 'transaction': renderTransactionForm(); break;
+                case 'history': renderTransactionHistory(); break;
+                case 'prices': renderPriceManager(); break;
+            }
+        }
+
+        // --- Render UI Components (Dashboard, Portfolio, etc.) ---
+        function renderDashboard() {
+            const container = document.getElementById('dashboard-tab');
+            let content = '';
+            if (portfolioData.length === 0) {
+                content = `<p class="text-gray-400">No portfolio data to display. Please add teams/individuals to your database to get started.</p>`;
+            } else {
+                const sortedPortfolio = [...portfolioData].sort((a,b) => b.totalPortfolioValue - a.totalPortfolioValue);
+                const topPerformer = sortedPortfolio[0];
+                const leaderboard = sortedPortfolio.slice(0, 10);
+                content = `
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        <div class="md:col-span-2 bg-[#2C2C2E] p-6 rounded-lg">
+                            <h3 class="text-xl font-bold mb-4">Leaderboard (Top 10)</h3>
+                            <ul id="leaderboard-list" class="space-y-3">
+                                ${leaderboard.map((person, index) => `
+                                    <li class="flex items-center justify-between p-3 bg-[#1C1C1E] rounded-lg">
+                                        <span class="font-bold w-8 text-center ${index < 3 ? 'text-yellow-400' : ''}">${index + 1}.</span>
+                                        <span>${person.name}</span>
+                                        <span class="font-semibold text-[#3ECF8E]">${formatCurrency(person.totalPortfolioValue)}</span>
+                                    </li>
+                                `).join('')}
+                            </ul>
+                        </div>
+                        ${topPerformer ? `
+                        <div id="top-performer-card" class="bg-[#2C2C2E] p-6 rounded-lg text-center">
+                            <h3 class="text-xl font-bold mb-4">Top Performer</h3>
+                            <div class="text-5xl mb-2">🏆</div>
+                            <div class="text-2xl font-bold text-yellow-400">${topPerformer.name}</div>
+                            <div class="text-3xl font-light mt-2 text-[#3ECF8E]">${formatCurrency(topPerformer.totalPortfolioValue)}</div>
+                            <div class="mt-4 text-sm">
+                                <p><span class="font-semibold">Cash:</span> ${formatCurrency(topPerformer.currentCashBalance)}</p>
+                                <p><span class="font-semibold">Holdings:</span> ${formatCurrency(topPerformer.totalHoldingsValue)}</p>
+                            </div>
+                        </div>` : ''}
+                    </div>`;
+            }
+            container.innerHTML = `<h2 class="text-2xl font-semibold mb-4 text-[#3ECF8E]">Dashboard</h2>${content}`;
+        }
+
+        function renderPortfolioSummary() {
+            const container = document.getElementById('portfolio-tab');
+            let tableBody = '';
+            if (portfolioData.length === 0) {
+                tableBody = `<tr><td colspan="5" class="text-center py-8 text-gray-400">No individuals found in the database.</td></tr>`;
+            } else {
+                tableBody = portfolioData.map(person => `
+                    <tr class="bg-[#1C1C1E] border-b border-gray-700 hover:bg-[#2C2C2E]/50" data-person-id="${person.id}">
+                        <td class="px-6 py-4 font-medium">${person.name}</td>
+                        <td class="px-6 py-4 text-right font-bold text-lg">${formatCurrency(person.totalPortfolioValue)}</td>
+                        <td class="px-6 py-4 text-right">${formatCurrency(person.currentCashBalance)}</td>
+                        <td class="px-6 py-4 text-right">${formatCurrency(person.totalHoldingsValue)}</td>
+                        <td class="px-6 py-4 text-center"><button data-person-id="${person.id}" class="view-holdings-btn font-medium text-[#3ECF8E] hover:underline">View Holdings</button></td>
+                    </tr>`).join('');
+            }
+            container.innerHTML = `
+                <h2 class="text-2xl font-semibold mb-4 text-[#3ECF8E]">Portfolio Summary</h2>
+                <div class="overflow-x-auto"><table class="w-full text-sm text-left text-gray-300">
+                    <thead class="text-xs text-[#3ECF8E] uppercase bg-[#2C2C2E]">
+                        <tr>
+                            <th class="px-6 py-3">Team</th>
+                            <th class="px-6 py-3 text-right">Portfolio Value</th>
+                            <th class="px-6 py-3 text-right">Cash Balance</th>
+                            <th class="px-6 py-3 text-right">Holdings Value</th>
+                            <th class="px-6 py-3 text-center">Details</th>
+                        </tr>
+                    </thead>
+                    <tbody id="portfolio-table-body">${tableBody}</tbody>
+                </table></div>`;
+        }
+
+        function renderTransactionForm() {
+            const container = document.getElementById('transaction-tab');
+            let content = '';
+            if (individuals.length === 0 || commodities.length === 0 || brokers.length === 0) {
+                content = `<p class="text-gray-400">Cannot log transactions. Please ensure there is at least one team, commodity, and broker in the database.</p>`;
+            } else {
+                content = `
+                <form id="transaction-form" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div><label class="block text-sm font-medium text-gray-300 mb-1">Team</label>
+                        <select name="person_id" required class="w-full bg-[#2C2C2E] border border-gray-600 rounded-md p-2.5 text-white">
+                            <option value="">Select Team</option>
+                            ${individuals.map(i => `<option value="${i.id}">${i.name}</option>`).join('')}
+                        </select>
+                    </div>
+                    <div><label class="block text-sm font-medium text-gray-300 mb-1">Broker</label>
+                        <select name="broker_id" required class="w-full bg-[#2C2C2E] border border-gray-600 rounded-md p-2.5 text-white">
+                            <option value="">Select Broker</option>
+                            ${brokers.map(b => `<option value="${b.id}">${b.name}</option>`).join('')}
+                        </select>
+                    </div>
+                    <div><label class="block text-sm font-medium text-gray-300 mb-1">Commodity</label>
+                        <select name="commodity_id" required class="w-full bg-[#2C2C2E] border border-gray-600 rounded-md p-2.5 text-white">
+                            <option value="">Select Commodity</option>
+                            ${commodities.map(c => `<option value="${c.id}">${c.name}</option>`).join('')}
+                        </select>
+                    </div>
+                    <div><label class="block text-sm font-medium text-gray-300 mb-1">Action</label>
+                        <select name="action" class="w-full bg-[#2C2C2E] border border-gray-600 rounded-md p-2.5 text-white">
+                            <option value="Buy">Buy</option><option value="Sell">Sell</option>
+                        </select>
+                    </div>
+                    <div><label class="block text-sm font-medium text-gray-300 mb-1">Quantity</label>
+                        <input type="number" name="quantity" required placeholder="e.g., 10" step="any" min="0.01" class="w-full bg-[#2C2C2E] border border-gray-600 rounded-md p-2 text-white" />
+                    </div>
+                    <div><label class="block text-sm font-medium text-gray-300 mb-1">Price per Unit (Market)</label>
+                        <input type="number" name="price" required placeholder="Select a commodity" step="any" readonly class="w-full bg-[#1c1c1e] border border-gray-600 rounded-md p-2 text-white cursor-not-allowed" />
+                    </div>
+                    <div class="md:col-span-2"><button type="submit" class="w-full bg-[#3ECF8E] hover:bg-[#35b47c] text-black font-bold py-3 px-4 rounded-lg">Log Transaction</button></div>
+                </form>
+                <div id="transaction-message" class="mt-4 p-3 rounded-lg text-center"></div>`;
+            }
+            container.innerHTML = `<h2 class="text-2xl font-semibold mb-4 text-[#3ECF8E]">Log a New Transaction</h2>${content}`;
+        }
+
+        function renderTransactionHistory() {
+            const container = document.getElementById('history-tab');
+            container.innerHTML = `
+                <h2 class="text-2xl font-semibold mb-4 text-[#3ECF8E]">Transaction History</h2>
+                <div class="bg-[#2C2C2E] p-4 rounded-lg mb-6">
+                    <h3 class="text-lg font-semibold mb-3">Controls & Downloads</h3>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 items-end">
+                        <div class="flex flex-col sm:flex-row gap-2">
+                             <div class="flex-grow">
+                                <label class="block text-sm font-medium text-gray-300 mb-1">Select Team</label>
+                                <select id="person-history-select" class="w-full bg-[#1C1C1E] border border-gray-600 rounded-md p-2.5 text-white">
+                                    <option value="">Select Team to Filter/Download</option>
+                                    ${individuals.map(i => `<option value="${i.id}">${i.name}</option>`).join('')}
+                                </select>
+                            </div>
+                            <div class="flex gap-2">
+                                <button id="filter-team-btn" class="h-11 mt-auto flex items-center justify-center space-x-2 bg-blue-600 hover:bg-blue-700 text-white font-bold p-2 rounded-lg transition-colors" title="Filter by Team">
+                                   <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>
+                                </button>
+                                <button id="show-all-btn" class="h-11 mt-auto flex items-center justify-center space-x-2 bg-gray-600 hover:bg-gray-500 text-white font-bold p-2 rounded-lg transition-colors" title="Show All Transactions">
+                                   <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 2v6h6M21.5 22v-6h-6"/><path d="M22 11.5A10 10 0 0 0 3.2 7.2M2 12.5a10 10 0 0 0 18.8 4.2"/></svg>
+                                </button>
+                                <button id="download-person-btn" class="h-11 mt-auto flex items-center justify-center space-x-2 bg-[#3ECF8E] hover:bg-[#35b47c] text-black font-bold p-2 rounded-lg transition-colors" title="Download Selected Team's Transactions">
+                                   <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                                </button>
+                            </div>
+                        </div>
+                         <div>
+                            <button id="download-all-btn" class="w-full h-11 flex items-center justify-center space-x-2 bg-[#3ECF8E] hover:bg-[#35b47c] text-black font-bold py-2 px-4 rounded-lg transition-colors">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                                <span>Download All Transactions (CSV)</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                <div id="history-message" class="mb-4 p-3 rounded-lg text-center"></div>
+                <div id="history-table-container" class="overflow-x-auto max-h-[60vh]"></div>`;
+            renderHistoryTable(transactions);
+        }
+
+        function renderHistoryTable(data) {
+            const tableContainer = document.getElementById('history-table-container');
+            if (!tableContainer) return;
+
+            let tableBody = '';
+            if (data.length === 0) {
+                tableBody = `<tr><td colspan="8" class="text-center py-8 text-gray-400">No transactions found.</td></tr>`;
+            } else {
+                tableBody = data.map(t => createTransactionRowHtml(t)).join('');
+            }
+
+            tableContainer.innerHTML = `
+                <table class="w-full text-sm text-left text-gray-300">
+                    <thead class="text-xs text-[#3ECF8E] uppercase bg-[#2C2C2E] sticky top-0">
+                        <tr>
+                            <th class="px-4 py-2">Date</th><th class="px-4 py-2">Team</th>
+                            <th class="px-4 py-2">Commodity</th><th class="px-4 py-2">Action</th>
+                            <th class="px-4 py-2 text-right">Quantity</th><th class="px-4 py-2 text-right">Price</th>
+                            <th class="px-4 py-2 text-right">Total Value</th><th class="px-4 py-2 text-center">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody>${tableBody}</tbody>
+                </table>`;
+        }
+
+        function renderPriceManager() {
+            const container = document.getElementById('prices-tab');
+            let content = '';
+            if (commodities.length === 0) {
+                content = `<p class="text-gray-400">No commodities found in the database to manage.</p>`;
+            } else {
+                content = `
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    ${commodities.sort((a,b) => a.name.localeCompare(b.name)).map(comm => `
+                        <div class="bg-[#2C2C2E] p-3 rounded-lg">
+                            <label class="block text-sm font-medium text-gray-300 mb-1">${comm.name}</label>
+                            <input type="number" data-id="${comm.id}" value="${comm.current_price}" min="0" class="price-input w-full bg-[#1C1C1E] border border-gray-600 rounded-md p-2 text-white" />
+                        </div>`).join('')}
+                </div>
+                <div class="mt-6"><button id="update-prices-btn" class="w-full bg-[#3ECF8E] hover:bg-[#35b47c] text-black font-bold py-3 px-4 rounded-lg">Update All Prices</button></div>
+                <div id="prices-message" class="mt-4 p-3 rounded-lg text-center"></div>`;
+            }
+            container.innerHTML = `<h2 class="text-2xl font-semibold mb-4 text-[#3ECF8E]">Manage Market Prices</h2>${content}`;
+        }
+        
+        // --- Modal Logic ---
+        function showHoldingsModal(personId) {
+            const person = portfolioData.find(p => p.id == personId);
+            if (!person) return;
+            const modal = document.getElementById('holdings-modal');
+            modal.innerHTML = `
+                <div class="bg-[#1C1C1E] rounded-lg shadow-2xl p-6 w-full max-w-2xl">
+                    <div class="flex justify-between items-center mb-4">
+                        <h3 class="text-xl font-bold text-[#3ECF8E]">${person.name}'s Holdings</h3>
+                        <button class="close-modal-btn text-gray-400 hover:text-white text-2xl font-bold">&times;</button>
+                    </div>
+                    <div class="overflow-y-auto max-h-[60vh]">
+                        ${person.holdings.length > 0 ? `<table class="w-full text-sm text-left text-gray-300">
+                            <thead class="text-xs text-[#3ECF8E] uppercase bg-[#2C2C2E]">
+                                <tr>
+                                    <th class="px-4 py-2">Commodity</th><th class="px-4 py-2 text-right">Qty Held</th>
+                                    <th class="px-4 py-2 text-right">Avg. Buy Price</th><th class="px-4 py-2 text-right">Current Value</th>
+                                    <th class="px-4 py-2 text-right">P/L</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${person.holdings.map(h => `
+                                    <tr class="bg-[#1C1C1E] border-b border-gray-700">
+                                        <td class="px-4 py-3 font-medium">${h.name}</td>
+                                        <td class="px-4 py-3 text-right">${h.qtyHeld.toFixed(2)}</td>
+                                        <td class="px-4 py-3 text-right">${formatCurrency(h.avgBuyPrice)}</td>
+                                        <td class="px-4 py-3 text-right font-semibold">${formatCurrency(h.currentValue)}</td>
+                                        <td class="px-4 py-3 text-right font-semibold ${h.pnl >= 0 ? 'text-green-400' : 'text-red-400'}">${formatCurrency(h.pnl)}</td>
+                                    </tr>`).join('')}
+                            </tbody>
+                        </table>` : `<p class="text-center text-gray-400 py-8">No active holdings.</p>`}
+                    </div>
+                </div>`;
+            modal.classList.add('active');
+        }
+
+        function showPromptModal({ title, message, inputType = 'none', placeholder = '', requiredValue = null, onConfirm, confirmText = 'Confirm', confirmColor = 'red' }) {
+            const modal = document.getElementById('prompt-modal');
+            let inputHtml = '';
+            if (inputType === 'password') {
+                inputHtml = `
+                    <input type="password" id="prompt-password-input" class="w-full bg-[#2C2C2E] border border-gray-600 rounded-md p-2 mt-4 text-white" placeholder="${placeholder}">
+                    <p id="prompt-error" class="text-red-500 text-sm mt-2 h-4"></p>
+                `;
+            }
+
+            modal.innerHTML = `
+                <div class="bg-[#1C1C1E] rounded-lg shadow-2xl p-6 w-full max-w-md">
+                    <h3 class="text-lg font-bold text-yellow-400 mb-4">${title}</h3>
+                    <p class="text-gray-300 mb-2">${message}</p>
+                    ${inputHtml}
+                    <div class="flex justify-end space-x-4 mt-4">
+                        <button id="cancel-btn" class="px-4 py-2 rounded-lg bg-gray-600 hover:bg-gray-500 text-white font-semibold">Cancel</button>
+                        <button id="confirm-btn" class="px-4 py-2 rounded-lg bg-${confirmColor}-600 hover:bg-${confirmColor}-700 text-white font-semibold">${confirmText}</button>
+                    </div>
+                </div>`;
+            modal.classList.add('active');
+
+            document.getElementById('confirm-btn').onclick = () => {
+                if (inputType === 'password') {
+                    const input = document.getElementById('prompt-password-input');
+                    const errorP = document.getElementById('prompt-error');
+                    if (input.value === requiredValue) {
+                        onConfirm();
+                        hidePromptModal();
+                    } else {
+                        errorP.textContent = 'Incorrect password.';
+                    }
+                } else {
+                    onConfirm();
+                    hidePromptModal();
+                }
+            };
+            document.getElementById('cancel-btn').onclick = hidePromptModal;
+        }
+        function hidePromptModal() { document.getElementById('prompt-modal').classList.remove('active'); }
+
+        // --- Calculation Logic ---
+        function calculatePortfolio() {
+            if (individuals.length === 0) {
+                portfolioData = [];
+                return;
+            }
+            const commodityMap = Object.fromEntries(commodities.map(c => [c.id, c]));
+            portfolioData = individuals.map(person => {
+                const personTransactions = transactions.filter(t => t.person_id === person.id);
+                const cashSpent = personTransactions.filter(t => t.action === 'Buy').reduce((sum, t) => sum + (t.quantity * t.price), 0);
+                const cashGained = personTransactions.filter(t => t.action === 'Sell').reduce((sum, t) => sum + (t.quantity * t.price), 0);
+                const currentCashBalance = person.initial_capital - cashSpent + cashGained;
+
+                const holdings = {};
+                personTransactions.forEach(t => {
+                    if (!holdings[t.commodity_id]) holdings[t.commodity_id] = { qtyHeld: 0, totalCost: 0 };
+                    if (t.action === 'Buy') {
+                        holdings[t.commodity_id].qtyHeld += t.quantity;
+                        holdings[t.commodity_id].totalCost += t.quantity * t.price;
+                    } else {
+                        holdings[t.commodity_id].qtyHeld -= t.quantity;
+                    }
+                });
+                
+                let totalHoldingsValue = 0;
+                const detailedHoldings = Object.entries(holdings).map(([commodityId, data]) => {
+                    const commodity = commodityMap[commodityId];
+                    if (!commodity) return null; // Commodity was deleted
+                    const totalBoughtQty = personTransactions.filter(t => t.commodity_id == commodityId && t.action === 'Buy').reduce((sum, t) => sum + t.quantity, 0);
+                    const avgBuyPrice = totalBoughtQty > 0 ? data.totalCost / totalBoughtQty : 0;
+                    const currentValue = data.qtyHeld * commodity.current_price;
+                    totalHoldingsValue += currentValue;
+                    const pnl = currentValue - (data.qtyHeld * avgBuyPrice);
+                    // FIX: Return a clean holding object without spreading the person object
+                    return { name: commodity.name, qtyHeld: data.qtyHeld, totalCost: data.totalCost, avgBuyPrice, currentValue, pnl };
+                }).filter(h => h && h.qtyHeld > 0.001);
+
+                return { ...person, currentCashBalance, totalHoldingsValue, totalPortfolioValue: currentCashBalance + totalHoldingsValue, holdings: detailedHoldings };
+            });
+             // No default sort, keeps original order from DB
+        }
+
+        // --- Event Listeners and Handlers ---
+        mainContent.addEventListener('click', (e) => {
+            const target = e.target;
+            if (target.closest('.view-holdings-btn')) {
+                showHoldingsModal(target.closest('.view-holdings-btn').dataset.personId);
+            } else if (target.closest('.delete-transaction-btn')) {
+                const transactionId = target.closest('.delete-transaction-btn').dataset.id;
+                showPromptModal({
+                    title: 'Confirm Deletion',
+                    message: 'To delete this transaction, please enter the password.',
+                    inputType: 'password',
+                    placeholder: 'Enter password',
+                    requiredValue: 'thisgameisrigged',
+                    confirmText: 'Delete',
+                    confirmColor: 'red',
+                    onConfirm: () => handleDeleteTransaction(transactionId)
+                });
+            } else if (target.id === 'update-prices-btn') {
+                showPromptModal({
+                    title: 'Confirm Price Update',
+                    message: 'To update all market prices, please enter the password.',
+                    inputType: 'password',
+                    placeholder: 'Enter password',
+                    requiredValue: 'lifeisunfair',
+                    confirmText: 'Update',
+                    confirmColor: 'green',
+                    onConfirm: () => executePriceUpdate(target)
+                });
+            } else if (target.id === 'download-all-btn') {
+                exportToCsv('all_transactions.csv', transactions);
+            } else if (target.id === 'download-person-btn') {
+                handleDownloadPerson();
+            } else if (target.id === 'filter-team-btn') {
+                handleFilterTeam();
+            } else if (target.id === 'show-all-btn') {
+                renderHistoryTable(transactions);
+            }
+        });
+
+        mainContent.addEventListener('submit', (e) => {
+            if (e.target.id === 'transaction-form') {
+                e.preventDefault();
+                handleTransactionSubmit(e.target);
+            }
+        });
+
+        mainContent.addEventListener('change', (e) => {
+            if (e.target.name === 'commodity_id') {
+                const commodity = commodities.find(c => c.id == e.target.value);
+                const priceInput = document.querySelector('input[name="price"]');
+                if (priceInput) priceInput.value = commodity ? commodity.current_price : '';
+            }
+        });
+        
+        document.getElementById('holdings-modal').addEventListener('click', (e) => {
+            if (e.target.classList.contains('close-modal-btn') || e.target.id === 'holdings-modal') {
+                e.currentTarget.classList.remove('active');
+            }
+        });
+
+        // --- Supabase Interaction Functions ---
+        async function handleTransactionSubmit(form) {
+            const formData = new FormData(form);
+            const data = Object.fromEntries(formData.entries());
+            const msgDiv = document.getElementById('transaction-message');
+            
+            const numericQuantity = parseFloat(data.quantity);
+            const numericPrice = parseFloat(data.price);
+
+            // Validation
+            const personData = portfolioData.find(p => p.id == data.person_id);
+            if (data.action === 'Buy' && (numericQuantity * numericPrice) > personData.currentCashBalance) {
+                msgDiv.textContent = `Insufficient funds. Available: ${formatCurrency(personData.currentCashBalance)}`;
+                msgDiv.className = 'mt-4 p-3 rounded-lg text-center bg-red-500/20 text-red-300';
+                return;
+            }
+            if (data.action === 'Sell') {
+                const holding = personData?.holdings.find(h => h.name === commodities.find(c=>c.id == data.commodity_id)?.name);
+                const availableQty = holding ? holding.qtyHeld : 0;
+                if (numericQuantity > availableQty + 0.0001) {
+                    msgDiv.textContent = `Not enough quantity to sell. Available: ${availableQty.toFixed(2)}`;
+                    msgDiv.className = 'mt-4 p-3 rounded-lg text-center bg-red-500/20 text-red-300';
+                    return;
+                }
+            }
+
+            const { error } = await supabaseClient.from('transactions').insert({
+                person_id: data.person_id,
+                broker_id: data.broker_id,
+                commodity_id: data.commodity_id,
+                action: data.action,
+                quantity: numericQuantity,
+                price: numericPrice,
+            });
+
+            if (error) {
+                msgDiv.textContent = `Error: ${error.message}`;
+                msgDiv.className = 'mt-4 p-3 rounded-lg text-center bg-red-500/20 text-red-300';
+            } else {
+                msgDiv.textContent = 'Transaction logged successfully!';
+                msgDiv.className = 'mt-4 p-3 rounded-lg text-center bg-green-500/20 text-green-300';
+                form.reset();
+            }
+        }
+
+        async function handleDeleteTransaction(id) {
+            await supabaseClient.from('transactions').delete().eq('id', id);
+        }
+        
+        async function executePriceUpdate(button) {
+            button.disabled = true;
+            const updates = Array.from(document.querySelectorAll('.price-input')).map(input => ({
+                id: input.dataset.id,
+                current_price: parseFloat(input.value)
+            }));
+            
+            const { error } = await supabaseClient.from('commodities').upsert(updates);
+            
+            const msgDiv = document.getElementById('prices-message');
+            if (error) {
+                msgDiv.textContent = `Error: ${error.message}`;
+                msgDiv.className = 'mt-4 p-3 rounded-lg text-center bg-red-500/20 text-red-300';
+            } else {
+                msgDiv.textContent = 'Prices updated successfully!';
+                msgDiv.className = 'mt-4 p-3 rounded-lg text-center bg-green-500/20 text-green-300';
+            }
+            button.disabled = false;
+        }
+
+        function handleDownloadPerson() {
+            const select = document.getElementById('person-history-select');
+            const personId = select.value;
+            const msgDiv = document.getElementById('history-message');
+            if (!personId) {
+                msgDiv.textContent = 'Please select a team to download.';
+                msgDiv.className = 'mb-4 p-3 rounded-lg text-center bg-red-500/20 text-red-300';
+                setTimeout(() => msgDiv.textContent = '', 3000);
+                return;
+            }
+            const personTransactions = transactions.filter(t => t.person_id == personId);
+            const personName = individuals.find(i => i.id == personId)?.name || 'team';
+            exportToCsv(`${personName}_transactions.csv`, personTransactions);
+        }
+
+        function handleFilterTeam() {
+            const select = document.getElementById('person-history-select');
+            const personId = select.value;
+            if (!personId) {
+                renderHistoryTable(transactions);
+                return;
+            }
+            const filteredTransactions = transactions.filter(t => t.person_id == personId);
+            renderHistoryTable(filteredTransactions);
+        }
+
+        function exportToCsv(filename, rows) {
+            if (rows.length === 0) {
+                const msgDiv = document.getElementById('history-message');
+                msgDiv.textContent = 'No transactions to export for this selection.';
+                msgDiv.className = 'mb-4 p-3 rounded-lg text-center bg-yellow-500/20 text-yellow-300';
+                setTimeout(() => msgDiv.textContent = '', 3000);
+                return;
+            }
+            const nameMap = {
+                individuals: Object.fromEntries(individuals.map(i => [i.id, i.name])),
+                commodities: Object.fromEntries(commodities.map(c => [c.id, c.name])),
+                brokers: Object.fromEntries(brokers.map(b => [b.id, b.name])),
+            };
+
+            const header = ['Timestamp', 'Team', 'Broker', 'Commodity', 'Action', 'Quantity', 'Price', 'TotalValue'];
+            const csvContent = [
+                header.join(','),
+                ...rows.map(row => [
+                    `"${new Date(row.created_at).toLocaleString('en-IN')}"`,
+                    `"${nameMap.individuals[row.person_id]}"`,
+                    `"${nameMap.brokers[row.broker_id]}"`,
+                    `"${nameMap.commodities[row.commodity_id]}"`,
+                    row.action,
+                    row.quantity,
+                    row.price,
+                    row.quantity * row.price
+                ].join(','))
+            ].join('\n');
+
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement("a");
+            const url = URL.createObjectURL(blob);
+            link.setAttribute("href", url);
+            link.setAttribute("download", filename);
+            link.style.visibility = 'hidden';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+        
+        function createTransactionRowHtml(t) {
+            const nameMap = {
+                individuals: Object.fromEntries(individuals.map(i => [i.id, i.name])),
+                commodities: Object.fromEntries(commodities.map(c => [c.id, c.name])),
+            };
+            return `
+                <tr class="bg-[#1C1C1E] border-b border-gray-700" data-transaction-id="${t.id}">
+                    <td class="px-4 py-3">${new Date(t.created_at).toLocaleString('en-IN')}</td>
+                    <td class="px-4 py-3">${nameMap.individuals[t.person_id] || 'Unknown'}</td>
+                    <td class="px-4 py-3">${nameMap.commodities[t.commodity_id] || 'Unknown'}</td>
+                    <td class="px-4 py-3 font-semibold ${t.action === 'Buy' ? 'text-green-400' : 'text-red-400'}">${t.action}</td>
+                    <td class="px-4 py-3 text-right">${t.quantity}</td>
+                    <td class="px-4 py-3 text-right">${formatCurrency(t.price)}</td>
+                    <td class="px-4 py-3 text-right">${formatCurrency(t.quantity * t.price)}</td>
+                    <td class="px-4 py-3 text-center"><button data-id="${t.id}" class="delete-transaction-btn text-red-400 hover:text-red-300 p-1"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg></button></td>
+                </tr>
+            `;
+        }
+
+        // --- NEW: Surgical DOM Update Functions ---
+        function handleDataChange() {
+            calculatePortfolio();
+            const activeTab = document.querySelector('.tab-content.active')?.id.replace('-tab', '');
+            if (!activeTab) return;
+
+            // These tabs need a full redraw because all data is interconnected
+            if (activeTab === 'dashboard') renderDashboard();
+            if (activeTab === 'portfolio') renderPortfolioSummary();
+        }
+
+        function addTransactionToHistory(transaction) {
+            const historyTab = document.getElementById('history-tab');
+            if (historyTab.classList.contains('active')) {
+                const tableBody = historyTab.querySelector('tbody');
+                if (tableBody) {
+                    const newRow = createTransactionRowHtml(transaction);
+                    tableBody.insertAdjacentHTML('afterbegin', newRow);
+                }
+            }
+        }
+        
+        function removeTransactionFromHistory(transactionId) {
+            const historyTab = document.getElementById('history-tab');
+            if (historyTab.classList.contains('active')) {
+                const row = historyTab.querySelector(`tr[data-transaction-id="${transactionId}"]`);
+                if (row) row.remove();
+            }
+        }
+
+        function updatePriceOnForms(commodity) {
+             const transactionTab = document.getElementById('transaction-tab');
+             if (transactionTab.classList.contains('active')) {
+                const commoditySelect = transactionTab.querySelector('select[name="commodity_id"]');
+                if (commoditySelect && commoditySelect.value == commodity.id) {
+                    const priceInput = transactionTab.querySelector('input[name="price"]');
+                    priceInput.value = commodity.current_price;
+                }
+             }
+             const pricesTab = document.getElementById('prices-tab');
+             if (pricesTab.classList.contains('active')) {
+                const priceInput = pricesTab.querySelector(`.price-input[data-id="${commodity.id}"]`);
+                if (priceInput && document.activeElement !== priceInput) {
+                    priceInput.value = commodity.current_price;
+                }
+             }
+        }
+
+
+        // --- Initialization ---
+        async function initializeApp() {
+            try {
+                // Vercel will replace these placeholders with your Environment Variables during deployment.
+                const supabaseUrl = 'https://kpgvgynqyhthbgfduops.supabase.co';
+                const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtwZ3ZneW5xeWh0aGJnZmR1b3BzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTU2MjI0NzQsImV4cCI6MjA3MTE5ODQ3NH0.24o9s0kU8-zqCniklThw2sSsrMuUC410vDzm6yGITDM';
+                
+                if (supabaseUrl.includes('PLACEHOLDER') || supabaseKey.includes('PLACEHOLDER')) {
+                    throw new Error("Supabase URL or Key is missing. Configure Vercel Environment Variables.");
+                }
+
+                const { createClient } = supabase;
+                supabaseClient = createClient(supabaseUrl, supabaseKey);
+
+                // Fetch all initial data
+                const [indRes, broRes, comRes, tranRes] = await Promise.all([
+                    supabaseClient.from('individuals').select('*').order('id', { ascending: true }),
+                    supabaseClient.from('brokers').select('*'),
+                    supabaseClient.from('commodities').select('*'),
+                    supabaseClient.from('transactions').select('*').order('created_at', { ascending: false })
+                ]);
+
+                if (indRes.error || broRes.error || comRes.error || tranRes.error) {
+                    throw new Error(indRes.error?.message || broRes.error?.message || comRes.error?.message || tranRes.error?.message);
+                }
+
+                individuals = indRes.data || [];
+                brokers = broRes.data || [];
+                commodities = comRes.data || [];
+                transactions = tranRes.data || [];
+                
+                calculatePortfolio();
+                renderFullActiveTab();
+                loadingDiv.classList.add('hidden');
+
+                // Set up smarter real-time subscriptions
+                supabaseClient.channel('public-db-changes')
+                    .on('postgres_changes', { event: '*', schema: 'public' }, (payload) => {
+                        console.log('Realtime change received!', payload);
+
+                        // Update local data based on the event
+                        if (payload.table === 'transactions') {
+                            if (payload.eventType === 'INSERT') {
+                                const newTransaction = payload.new;
+                                transactions.unshift(newTransaction);
+                                addTransactionToHistory(newTransaction);
+                            } else if (payload.eventType === 'DELETE') {
+                                const oldId = payload.old.id;
+                                transactions = transactions.filter(t => t.id !== oldId);
+                                removeTransactionFromHistory(oldId);
+                            }
+                        } else if (payload.table === 'commodities' && payload.eventType === 'UPDATE') {
+                            const updatedCommodity = payload.new;
+                            const index = commodities.findIndex(c => c.id === updatedCommodity.id);
+                            if (index !== -1) commodities[index] = updatedCommodity;
+                            updatePriceOnForms(updatedCommodity);
+                        }
+
+                        // Always recalculate and render financial summaries
+                        handleDataChange();
+                    })
+                    .subscribe();
+
+            } catch (e) {
+                console.error("Error initializing Supabase:", e);
+                errorDiv.textContent = e.message;
+                errorDiv.classList.remove('hidden');
+                loadingDiv.classList.add('hidden');
+            }
+        }
+
+        initializeApp();
+    </script>
+</body>
+</html>
